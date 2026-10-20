@@ -1,5 +1,5 @@
 export const useCodeProjects = createSharedComposable(() => {
-  const isCodeProject = (_base?: Pick<NcProject, 'type'> | null) => false
+  const isCodeProject = (_base?: { type?: string } | null) => false
 
   const isActiveBaseCodeProject = computed(() => false)
 
@@ -19,7 +19,16 @@ export const useCodeProjects = createSharedComposable(() => {
 
   const toggleSessionSearch = () => {}
 
+  const codeProjectRoleLabels = computed<Partial<Record<string, string>>>(() => ({}))
+
+  const codeProjectRoleDescriptions = computed<Partial<Record<string, string>>>(() => ({}))
+
+  const codeProjectRolePhrase = (_role: string, _count: number): string | undefined => undefined
+
   return {
+    codeProjectRoleLabels,
+    codeProjectRoleDescriptions,
+    codeProjectRolePhrase,
     isCodeProject,
     isActiveBaseCodeProject,
     isCodeProjectRoute,

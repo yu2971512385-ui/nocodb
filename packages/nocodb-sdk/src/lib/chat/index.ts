@@ -90,6 +90,8 @@ export interface ChatSessionMetaType {
   factoryMachineId?: string;
   /** App Factory: the machine version `computeId` was started from; absent on the stock machine. */
   factoryMachineVersion?: number;
+  /** App Factory: the last model picked, a {@link factoryModelRef}; the default for a message that names none. */
+  factoryModel?: string;
   /**
    * The app-build sandbox running RIGHT NOW, so a Stop on any instance can kill
    * it by id. Separate from `computeId`, which is the chat analyst's PAUSED
@@ -142,6 +144,11 @@ export interface ChatSessionMetaType {
     hash: string;
     fileCount: number;
     archivedAt: string;
+  };
+  /** App Factory: an archive or delete in flight; turns are refused until it clears or goes stale. */
+  factoryTransition?: {
+    op: 'archive' | 'delete';
+    at: string;
   };
   /** The pull request on this session's branch, resolved from the host each turn. */
   factoryPullRequest?: FactoryPullRequest;
@@ -251,6 +258,8 @@ export interface FactorySessionSummary {
   parent_session_id?: string | null;
   /** The agent's role, e.g. `explorer`. Absent on a user's own session. */
   agent_role?: string | null;
+  /** Who started it, and so the only one who may act in it; everyone else watches. */
+  fk_user_id?: string | null;
 }
 
 /**
@@ -312,6 +321,37 @@ export interface FactoryFile {
   hash: string;
 }
 
+/** What the review pane diffs, as Codex's review scopes. */
+export type FactoryPatchScope =
+  | 'branch'
+  | 'last_turn'
+  | 'uncommitted'
+  | 'unstaged'
+  | 'staged'
+  | 'commit';
+
+export interface FactorySessionPatchParams {
+  scope?: FactoryPatchScope;
+  /** `branch` only: the ref to compare against; the session's starting commit when absent. */
+  base?: string;
+  /** `commit` only: the commit to show. */
+  commit?: string;
+  ignoreWhitespace?: boolean;
+}
+
+/** A session's changes as one unified patch, with the refs the review pane picks from. */
+export interface FactorySessionPatch {
+  patch: string;
+  /** Cut off at the size cap; the head of it is what came back. */
+  truncated: boolean;
+  /** The checkout's current branch. */
+  branch: string;
+  /** Local and remote-tracking branches, for the base picker. */
+  branches: string[];
+  /** Commits made since the session started, newest first. */
+  commits: { sha: string; subject: string }[];
+}
+
 /**
  * A changed file's two sides, for the diff viewer.
  *
@@ -355,7 +395,13 @@ export interface FactoryPort {
  */
 export interface FactoryPreview {
   port: number;
+  /** The port's origin. */
   url: string;
+  /**
+   * Behind the preview edge: load this first, with `&next=<path>` appended. It
+   * signs the frame in on the port's origin, then goes to `next`.
+   */
+  entryUrl?: string;
 }
 
 /** A pull request open on a session's branch. */
@@ -371,10 +417,51 @@ export interface FactoryPullRequest {
   checkedAt?: string;
 }
 
+/** Models a factory session may run on; empty when the deployment fixes it. */
+export interface FactoryModelList {
+  /** What a session without a pick runs on, for display. */
+  defaultModel: string | null;
+  models: Array<{ value: string; label: string }>;
+  /** The workspace's own AI connections (bring your own key); model values come from {@link factoryModelRef}. */
+  integrations?: Array<{
+    id: string;
+    title: string;
+    sub_type: string;
+    models: Array<{ value: string; label: string }>;
+  }>;
+}
+
+/**
+ * A factory model pick as one string: `<provider>/<model>` on the managed
+ * integration, `<integrationId>:<provider>/<model>` on the workspace's own.
+ */
+export function factoryModelRef(model: string, integrationId?: string | null) {
+  return integrationId ? `${integrationId}:${model}` : model;
+}
+
+/** Inverse of {@link factoryModelRef}. A managed ref has its `/` before any `:` (Bedrock's `v1:0`). */
+export function factoryModelPick(ref: string): {
+  model: string;
+  integrationId?: string;
+} {
+  const at = ref.indexOf(':');
+
+  return at > 0 && !ref.slice(0, at).includes('/')
+    ? { integrationId: ref.slice(0, at), model: ref.slice(at + 1) }
+    : { model: ref };
+}
+
 /** The session row as stored, plus the repository it is pinned to. */
 export interface FactorySessionView extends ChatSessionType {
   repo?: { id: string; full_name: string };
 }
+
+/**
+ * App Factory's base-room scopes: `CHAT_EVENT:<ws>:<base>:factory:<sessionId>`
+ * streams one session, `…:factory:sessions` keeps the project's list current.
+ */
+export const FACTORY_ROOM = 'factory';
+export const FACTORY_SESSIONS_ROOM = 'sessions';
 
 /** Archive outranks the row's status: the row keeps whatever its last turn ended on. */
 export function factorySessionStatus(
